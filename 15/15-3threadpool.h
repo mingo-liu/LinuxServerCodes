@@ -20,13 +20,13 @@ private:
     void run();
 
 private:
-    int m_thread_number;
-    int m_max_requests;
-    pthread_t* m_threads;
-    std::list< T* > m_workqueue;
-    locker m_queuelocker;
-    sem m_queuestat;
-    bool m_stop;
+    int m_thread_number;    // 线程池中的线程数
+    int m_max_requests;     // 请求队列中的最大请求数
+    pthread_t* m_threads;   // 描述线程池的数组
+    std::list< T* > m_workqueue; // 请求队列, 双向链表
+    locker m_queuelocker;   // 保护请求队列的互斥锁
+    sem m_queuestat;        // 是否有任务需要处理
+    bool m_stop;            // 是否结束线程
 };
 
 template< typename T >
@@ -38,7 +38,7 @@ threadpool< T >::threadpool( int thread_number, int max_requests ) :
         throw std::exception();
     }
 
-    m_threads = new pthread_t[ m_thread_number ];
+    m_threads = new pthread_t[ m_thread_number ];   // 创建线程池数组
     if( ! m_threads )
     {
         throw std::exception();
@@ -47,12 +47,12 @@ threadpool< T >::threadpool( int thread_number, int max_requests ) :
     for ( int i = 0; i < thread_number; ++i )
     {
         printf( "create the %dth thread\n", i );
-        if( pthread_create( m_threads + i, NULL, worker, this ) != 0 )
+        if( pthread_create( m_threads + i, NULL, worker, this ) != 0 )   // 创建一个新的线程, worker是一个静态函数
         {
             delete [] m_threads;
             throw std::exception();
         }
-        if( pthread_detach( m_threads[i] ) )
+        if( pthread_detach( m_threads[i] ) )  // 将线程设置为分离状态(脱离线程)，即该线程结束后自动释放其资源
         {
             delete [] m_threads;
             throw std::exception();
@@ -70,8 +70,8 @@ threadpool< T >::~threadpool()
 template< typename T >
 bool threadpool< T >::append( T* request )
 {
-    m_queuelocker.lock();
-    if ( m_workqueue.size() > m_max_requests )
+    m_queuelocker.lock();     // 操作请求队列时加锁, 因为请求队列被所有线程共享
+    if ( m_workqueue.size() > m_max_requests )    // 为什么不是>=?
     {
         m_queuelocker.unlock();
         return false;
@@ -93,23 +93,23 @@ void* threadpool< T >::worker( void* arg )
 template< typename T >
 void threadpool< T >::run()
 {
-    while ( ! m_stop )
+    while ( ! m_stop )      // 每一个线程都在不停的从请求队列中取出任务并执行
     {
-        m_queuestat.wait();
+        m_queuestat.wait();  // 使用信号量是为了避免线程在任务队列为空时忙等待，通过等待信号量的通知来判断是否有任务需要处理。
         m_queuelocker.lock();
-        if ( m_workqueue.empty() )
+        if ( m_workqueue.empty() )    // 前面使用了信号量，为什么还要判断队列为空？wait同时唤醒多个进程，队列中的任务可能被其他线程取走，当前进程取任务时，队列为空
         {
             m_queuelocker.unlock();
             continue;
         }
         T* request = m_workqueue.front();
-        m_workqueue.pop_front();
+        m_workqueue.pop_front();    // 删除链表头部元素
         m_queuelocker.unlock();
         if ( ! request )
         {
             continue;
         }
-        request->process();
+        request->process();       // 处理任务的具体逻辑
     }
 }
 
